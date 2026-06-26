@@ -47,22 +47,35 @@ def label_mask(labels: torch.Tensor) -> torch.Tensor:
     return labels.ne(IGNORE_VALUE)
 
 
-def training_loss(predictions: torch.Tensor, labels: torch.Tensor, loss: str) -> torch.Tensor:
+def token_loss_values(predictions: torch.Tensor, labels: torch.Tensor, loss: str) -> torch.Tensor:
     mask = label_mask(labels)
     if not mask.any():
-        return predictions.sum() * 0.0
+        return predictions.new_empty((0,))
     if loss == "mse":
-        return torch.nn.functional.mse_loss(predictions[mask], labels[mask])
+        return torch.nn.functional.mse_loss(predictions[mask], labels[mask], reduction="none")
     if loss == "huber":
-        return torch.nn.functional.huber_loss(predictions[mask], labels[mask], delta=1.0)
+        return torch.nn.functional.huber_loss(predictions[mask], labels[mask], delta=1.0, reduction="none")
     raise ValueError(f"Unsupported loss: {loss}")
 
 
+def training_loss(predictions: torch.Tensor, labels: torch.Tensor, loss: str) -> torch.Tensor:
+    values = token_loss_values(predictions, labels, loss)
+    if values.numel() == 0:
+        return predictions.sum() * 0.0
+    return values.mean()
+
+
 @torch.no_grad()
-def evaluate(model: torch.nn.Module, loader: torch.utils.data.DataLoader, device: torch.device) -> dict[str, float]:
+def evaluate(
+    model: torch.nn.Module,
+    loader: torch.utils.data.DataLoader,
+    device: torch.device,
+    loss_name: str,
+) -> dict[str, float]:
     model.eval()
     predictions_all: list[np.ndarray] = []
     labels_all: list[np.ndarray] = []
+    losses_all: list[np.ndarray] = []
     for batch in loader:
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
@@ -72,11 +85,16 @@ def evaluate(model: torch.nn.Module, loader: torch.utils.data.DataLoader, device
         if mask.any():
             predictions_all.append(predictions[mask].clamp_min(0.0).detach().cpu().numpy())
             labels_all.append(labels[mask].detach().cpu().numpy())
+            losses_all.append(token_loss_values(predictions, labels, loss_name).detach().cpu().numpy())
     if not predictions_all:
-        return {"TRT": float("nan")}
+        return {"TRT": float("nan"), "loss": float("nan")}
     predictions_np = np.concatenate(predictions_all)
     labels_np = np.concatenate(labels_all)
-    return {"TRT": float(np.abs(predictions_np - labels_np).mean())}
+    losses_np = np.concatenate(losses_all)
+    return {
+        "TRT": float(np.abs(predictions_np - labels_np).mean()),
+        "loss": float(losses_np.mean()),
+    }
 
 
 def make_loader(
@@ -232,7 +250,7 @@ def run_stage(
     logs: list[dict[str, object]] = []
     for epoch in range(1, epochs + 1):
         train_loss = train_one_epoch(model, train_loader, optimizer, device, loss_name)
-        metrics = evaluate(model, valid_loader, device) if valid_loader is not None else None
+        metrics = evaluate(model, valid_loader, device, loss_name) if valid_loader is not None else None
         row = {"stage": label, "epoch": epoch, "train_loss": train_loss, "valid_mae": metrics}
         logs.append(row)
         if metrics is None:
@@ -240,7 +258,7 @@ def run_stage(
         else:
             print(
                 f"[{label}] epoch {epoch}/{epochs} train_loss={train_loss:.4f} "
-                f"valid_trt_mae={metrics['TRT']:.4f}",
+                f"valid_loss={metrics['loss']:.4f} valid_trt_mae={metrics['TRT']:.4f}",
                 flush=True,
             )
         if on_epoch_end is not None:
@@ -385,7 +403,7 @@ def main() -> None:
             on_epoch_end=save_best_if_needed,
         )
     )
-    last_metrics = evaluate(model, valid_loader, device)
+    last_metrics = evaluate(model, valid_loader, device, args.loss)
     save_checkpoint(args.output_dir / "checkpoint_last.pt", model, vocab, args, "finetune", args.finetune_epochs, last_metrics)
     (args.output_dir / "metrics_last.json").write_text(
         json.dumps({"stage": "finetune", "epoch": args.finetune_epochs, "valid_mae": last_metrics}, indent=2),

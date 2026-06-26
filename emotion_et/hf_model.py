@@ -13,7 +13,7 @@ FULL_FEATURE_NAMES = ["nFix", "FFD", "GPT", "TRT", "fixProp"]
 TRT_FEATURE_NAMES = ["TRT"]
 FEATURE_NAMES = FULL_FEATURE_NAMES
 TRT_INDEX = 3
-DEFAULT_WEIGHT = "et_predictor2_seed42.safetensors"
+DEFAULT_WEIGHT = "emotion_trt_predictor_seed42.safetensors"
 
 
 def feature_names_for_output_dim(output_dim: int) -> list[str]:

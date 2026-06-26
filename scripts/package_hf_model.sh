@@ -58,5 +58,5 @@ python -m emotion_et.package_hf_model "${ARGS[@]}"
 
 if [[ -n "${HF_MODEL_REPO:-}" ]]; then
   hf upload "$HF_MODEL_REPO" "$OUTPUT_DIR" . --type model \
-    --commit-message "Add augmented emotion ET predictor bundle"
+    --commit-message "Add emotion TRT predictor bundle"
 fi

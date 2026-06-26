@@ -11,6 +11,11 @@ PRETRAIN_EPOCHS="${PRETRAIN_EPOCHS:-100}"
 FINETUNE_EPOCHS="${FINETUNE_EPOCHS:-150}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 LR="${LR:-5e-5}"
+MAX_LENGTH="${MAX_LENGTH:-512}"
+SEED="${SEED:-42}"
+LOSS="${LOSS:-huber}"
+VALID_RATIO="${VALID_RATIO:-0.15}"
+PAD_MODE="${PAD_MODE:-dataset}"
 PRETRAIN_CSV="${PRETRAIN_CSV:-data/final_training/final_pretrain_trt_scaled.csv}"
 FINETUNE_CSV="${FINETUNE_CSV:-data/final_training/final_finetune_trt_scaled.csv}"
 
@@ -53,7 +58,9 @@ python -m emotion_et.train_trt \
   --finetune-epochs "$FINETUNE_EPOCHS" \
   --batch-size "$BATCH_SIZE" \
   --lr "$LR" \
-  --max-length 512 \
+  --max-length "$MAX_LENGTH" \
   --device "$DEVICE" \
-  --loss huber \
-  --seed 42
+  --loss "$LOSS" \
+  --seed "$SEED" \
+  --valid-ratio "$VALID_RATIO" \
+  --pad-mode "$PAD_MODE"
