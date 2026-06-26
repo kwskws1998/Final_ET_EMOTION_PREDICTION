@@ -1,0 +1,9 @@
+pandas>=2.0
+numpy>=1.24
+torch>=2.2
+transformers>=4.40
+huggingface_hub>=0.24
+safetensors>=0.4
+scipy>=1.10
+h5py>=3.10
+tqdm>=4.66

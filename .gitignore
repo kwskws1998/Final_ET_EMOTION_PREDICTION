@@ -1,0 +1,44 @@
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.env
+.venv/
+venv/
+
+# Generated training/evaluation outputs.
+runs/
+artifacts/
+wandb/
+lightning_logs/
+tensorboard/
+*.log
+
+# Model weights and upload bundles are generated after training.
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+hf_*/
+*_upload.zip
+*_bundle.zip
+
+# Raw/large eye-tracking sources.
+data/zuco_raw/
+data/zuco_processed/
+data/**/*.mat
+data/**/*.zip
+
+# Ignore data by default, then explicitly allow processed training CSVs.
+data/*
+!data/pretrain_data/
+!data/pretrain_data/*.csv
+!data/pretrain_data/*.json
+!data/finetune_data/
+!data/finetune_data/*.csv
+!data/finetune_data/*.json
+!data/final_training/
+!data/final_training/*.csv
+!data/final_training/*.json

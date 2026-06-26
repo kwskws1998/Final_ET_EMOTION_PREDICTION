@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+RUN_DIR="${RUN_DIR:-artifacts/trt_only_roberta}"
+OUTPUT_DIR="${OUTPUT_DIR:-hf_emotion_trt_roberta}"
+ZIP_PATH="${ZIP_PATH:-hf_emotion_trt_roberta_upload.zip}"
+MODEL_NAME="${MODEL_NAME:-roberta-base}"
+WEIGHT_NAME="${WEIGHT_NAME:-emotion_trt_predictor_seed42.safetensors}"
+LR_LABEL="${LR_LABEL:-5e-5}"
+LOCAL_FILES_ONLY="${LOCAL_FILES_ONLY:-0}"
+OVERWRITE="${OVERWRITE:-1}"
+
+PACKAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK_DIR="$(dirname "$PACKAGE_DIR")"
+
+resolve_path() {
+  case "$1" in
+    /*)
+      printf '%s\n' "$1"
+      ;;
+    emotion_et_prediction/*)
+      printf '%s/%s\n' "$WORK_DIR" "$1"
+      ;;
+    artifacts/*|hf_emotion_*|*.zip)
+      printf '%s/%s\n' "$PACKAGE_DIR" "$1"
+      ;;
+    *)
+      printf '%s/%s\n' "$PACKAGE_DIR" "$1"
+      ;;
+  esac
+}
+
+RUN_DIR="$(resolve_path "$RUN_DIR")"
+OUTPUT_DIR="$(resolve_path "$OUTPUT_DIR")"
+ZIP_PATH="$(resolve_path "$ZIP_PATH")"
+
+cd "$WORK_DIR"
+export PYTHONPATH="$PACKAGE_DIR${PYTHONPATH:+:$PYTHONPATH}"
+
+ARGS=(
+  --run-dir "$RUN_DIR"
+  --output-dir "$OUTPUT_DIR"
+  --zip-path "$ZIP_PATH"
+  --model-name "$MODEL_NAME"
+  --weight-name "$WEIGHT_NAME"
+  --lr-label "$LR_LABEL"
+)
+
+if [[ "$LOCAL_FILES_ONLY" == "1" ]]; then
+  ARGS+=(--local-files-only)
+fi
+
+if [[ "$OVERWRITE" == "1" ]]; then
+  ARGS+=(--overwrite)
+fi
+
+python -m emotion_et.package_hf_model "${ARGS[@]}"
+
+if [[ -n "${HF_MODEL_REPO:-}" ]]; then
+  hf upload "$HF_MODEL_REPO" "$OUTPUT_DIR" . --type model \
+    --commit-message "Add augmented emotion ET predictor bundle"
+fi
