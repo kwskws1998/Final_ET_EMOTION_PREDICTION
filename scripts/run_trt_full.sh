@@ -10,13 +10,15 @@ OUT_DIR="${OUT_DIR:-artifacts/trt_only_roberta}"
 PRETRAIN_EPOCHS="${PRETRAIN_EPOCHS:-100}"
 FINETUNE_EPOCHS="${FINETUNE_EPOCHS:-150}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
-LR="${LR:-5e-5}"
+LR="${LR:-2e-5}"
 MAX_LENGTH="${MAX_LENGTH:-512}"
 SEED="${SEED:-42}"
 LOSS="${LOSS:-huber}"
+PRETRAIN_VALID_RATIO="${PRETRAIN_VALID_RATIO:-0.10}"
 VALID_RATIO="${VALID_RATIO:-0.15}"
 PAD_MODE="${PAD_MODE:-dataset}"
 PRETRAIN_CSV="${PRETRAIN_CSV:-data/final_training/final_pretrain_trt_scaled.csv}"
+PRETRAIN_VALID_CSV="${PRETRAIN_VALID_CSV:-}"
 FINETUNE_CSV="${FINETUNE_CSV:-data/final_training/final_finetune_trt_scaled.csv}"
 
 missing=()
@@ -48,10 +50,20 @@ EOF
   exit 1
 fi
 
+pretrain_valid_args=(--pretrain-valid-ratio "$PRETRAIN_VALID_RATIO")
+if [[ -n "$PRETRAIN_VALID_CSV" ]]; then
+  if [[ ! -f "$PRETRAIN_VALID_CSV" ]]; then
+    printf '[error] missing PRETRAIN_VALID_CSV: %s\n' "$PRETRAIN_VALID_CSV" >&2
+    exit 1
+  fi
+  pretrain_valid_args=(--pretrain-valid-csv "$PRETRAIN_VALID_CSV")
+fi
+
 python -m emotion_et.train_trt \
   --backend hf \
   --model-name "$MODEL_NAME" \
   --pretrain-csv "$PRETRAIN_CSV" \
+  "${pretrain_valid_args[@]}" \
   --finetune-csv "$FINETUNE_CSV" \
   --output-dir "$OUT_DIR" \
   --pretrain-epochs "$PRETRAIN_EPOCHS" \

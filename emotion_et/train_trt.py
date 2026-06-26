@@ -266,18 +266,29 @@ def run_stage(
     return logs
 
 
+def frame_summary(df: pd.DataFrame | None) -> dict[str, int] | None:
+    if df is None:
+        return None
+    return {
+        "rows": int(len(df)),
+        "sentences": int(df["sentence_id"].nunique()),
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", choices=["hf", "tiny"], default="hf")
     parser.add_argument("--model-name", type=str, default="roberta-base")
     parser.add_argument("--pretrain-csv", type=Path, action="append", default=[])
+    parser.add_argument("--pretrain-valid-csv", type=Path, action="append", default=[])
     parser.add_argument("--finetune-csv", type=Path, action="append", required=True)
     parser.add_argument("--valid-csv", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--pretrain-epochs", type=int, default=0)
     parser.add_argument("--finetune-epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--lr", type=float, default=5e-5)
+    parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--pretrain-valid-ratio", type=float, default=0.10)
     parser.add_argument("--valid-ratio", type=float, default=0.15)
     parser.add_argument("--max-length", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
@@ -287,6 +298,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--loss", choices=["mse", "huber"], default="huber")
     parser.add_argument("--pad-mode", choices=["batch", "dataset", "max-length"], default="dataset")
     parser.add_argument("--max-pretrain-sentences", type=int, default=None)
+    parser.add_argument("--max-pretrain-valid-sentences", type=int, default=None)
     parser.add_argument("--max-finetune-train-sentences", type=int, default=None)
     parser.add_argument("--max-valid-sentences", type=int, default=None)
     return parser.parse_args()
@@ -298,9 +310,29 @@ def main() -> None:
     device = get_device(args.device)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
+    if not 0.0 <= args.pretrain_valid_ratio < 1.0:
+        raise ValueError("--pretrain-valid-ratio must be in [0, 1).")
+    if not 0.0 < args.valid_ratio < 1.0:
+        raise ValueError("--valid-ratio must be in (0, 1).")
+
     pretrain_df = None
+    pretrain_valid_df = None
     if args.pretrain_csv:
-        pretrain_df = limit_sentences(load_and_concat_csvs(args.pretrain_csv), args.max_pretrain_sentences)
+        pretrain_full_df = load_and_concat_csvs(args.pretrain_csv)
+        if args.pretrain_valid_csv:
+            pretrain_df = pretrain_full_df
+            pretrain_valid_df = load_and_concat_csvs(args.pretrain_valid_csv)
+        elif args.pretrain_valid_ratio > 0.0:
+            pretrain_df, pretrain_valid_df = split_by_sentence(
+                pretrain_full_df,
+                valid_ratio=args.pretrain_valid_ratio,
+                seed=args.seed,
+            )
+        else:
+            pretrain_df = pretrain_full_df
+        pretrain_df = limit_sentences(pretrain_df, args.max_pretrain_sentences)
+        if pretrain_valid_df is not None:
+            pretrain_valid_df = limit_sentences(pretrain_valid_df, args.max_pretrain_valid_sentences)
 
     finetune_df = load_and_concat_csvs(args.finetune_csv)
     if args.valid_csv is not None:
@@ -314,6 +346,8 @@ def main() -> None:
     backend_frames = [finetune_train_df, valid_df]
     if pretrain_df is not None:
         backend_frames.append(pretrain_df)
+    if pretrain_valid_df is not None:
+        backend_frames.append(pretrain_valid_df)
     model, vocab, tokenizer = build_backend_objects(
         backend=args.backend,
         model_name=args.model_name,
@@ -326,6 +360,17 @@ def main() -> None:
     print(f"Target: TRT only", flush=True)
     print(f"Loss: {args.loss}", flush=True)
     print(f"Output dir: {args.output_dir}", flush=True)
+    split_summary = {
+        "pretrain_train": frame_summary(pretrain_df),
+        "pretrain_valid": frame_summary(pretrain_valid_df),
+        "finetune_train": frame_summary(finetune_train_df),
+        "finetune_valid": frame_summary(valid_df),
+    }
+    print(f"Data split: {json.dumps(split_summary, sort_keys=True)}", flush=True)
+    (args.output_dir / "data_split_summary.json").write_text(
+        json.dumps(split_summary, indent=2),
+        encoding="utf-8",
+    )
 
     valid_loader = make_loader(
         valid_df,
@@ -350,6 +395,18 @@ def main() -> None:
             vocab=vocab,
             tokenizer=tokenizer,
         )
+        pretrain_valid_loader = None
+        if pretrain_valid_df is not None:
+            pretrain_valid_loader = make_loader(
+                pretrain_valid_df,
+                backend=args.backend,
+                batch_size=args.batch_size,
+                max_length=args.max_length,
+                shuffle=False,
+                pad_mode=args.pad_mode,
+                vocab=vocab,
+                tokenizer=tokenizer,
+            )
         logs.extend(
             run_stage(
                 model=model,
@@ -359,7 +416,7 @@ def main() -> None:
                 lr=args.lr,
                 label="pretrain",
                 loss_name=args.loss,
-                valid_loader=None,
+                valid_loader=pretrain_valid_loader,
             )
         )
 

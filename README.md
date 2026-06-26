@@ -186,7 +186,9 @@ DEVICE=cuda \
 PRETRAIN_EPOCHS=100 \
 FINETUNE_EPOCHS=150 \
 BATCH_SIZE=16 \
-LR=5e-5 \
+LR=2e-5 \
+PRETRAIN_VALID_RATIO=0.10 \
+VALID_RATIO=0.15 \
 bash scripts/run_trt_full.sh
 ```
 
@@ -200,6 +202,12 @@ data/final_training/final_finetune_trt_scaled.csv
 ```
 
 It does not fall back to `data/pretrain_data/train_and_valid.csv`.
+By default, the pretraining file is split by sentence into a 90/10
+train/validation split. That pretrain validation metric is diagnostic only; the
+saved `checkpoint_best.pt` is still selected by fine-tune validation TRT MAE.
+Use `PRETRAIN_VALID_RATIO=0` to disable pretrain validation, or
+`PRETRAIN_VALID_CSV=/path/to/pretrain_valid.csv` for an explicit pretrain
+validation file.
 
 ## Legacy ZuCo Aggregate
 
